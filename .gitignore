@@ -1,0 +1,18 @@
+# Gradle files
+.gradle/
+gradle/
+gradlew
+gradlew.bat
+
+# IDE Generated Files
+.idea/
+build/
+out/
+target/
+**.iml
+**.ppf
+
+# Misc.
+**.class
+**.log
+tmp/
