@@ -77,6 +77,11 @@ public class DefaultActionsListener implements ActionListener {
         this.listeners.add(onRun);
     }
 
+    @Override
+    public void clearListeners() {
+        this.listeners.clear();
+    }
+
     private void processMutation(long startingTime, DataSnapshot snapshot, DatabaseReference userRef) {
         if (!snapshot.getKey().equals("actions")) return;
 

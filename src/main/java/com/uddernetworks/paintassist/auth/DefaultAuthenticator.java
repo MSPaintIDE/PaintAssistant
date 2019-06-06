@@ -5,6 +5,7 @@ import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInsta
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
@@ -74,7 +75,7 @@ public class DefaultAuthenticator implements Authenticator {
 
     @Override
     public void unAuthenticate() {
-        this.tokenInfo.clear();
+        if (tokenInfo != null) this.tokenInfo.clear();
         this.tokenInfo = null;
 
         try {
@@ -86,6 +87,10 @@ public class DefaultAuthenticator implements Authenticator {
 
     @Override
     public Optional<Tokeninfo> authenticate() {
+        return authenticate(0);
+    }
+
+    public Optional<Tokeninfo> authenticate(int attempt) {
         try {
             httpTransport = GoogleNetHttpTransport.newTrustedTransport();
             dataStoreFactory = new FileDataStoreFactory(DATA_STORE_DIR);
@@ -96,13 +101,26 @@ public class DefaultAuthenticator implements Authenticator {
                     APPLICATION_NAME).build();
             // run commands
             String accessToken = credential.getAccessToken();
-            var tokenOptional = verifyToken(accessToken);
-            tokenOptional.ifPresent(tokenInfo -> this.tokenInfo = tokenInfo);
-            return tokenOptional;
+
+            try {
+                var tokenOptional = verifyToken(accessToken);
+                tokenOptional.ifPresent(tokenInfo -> this.tokenInfo = tokenInfo);
+                return tokenOptional;
+            } catch (GoogleJsonResponseException e) {
+                if (e.getMessage().equals("400 Bad Request")) {
+                    LOGGER.warn("Authentication failed with a 400, trying again...");
+                    if (attempt == 3) {
+                        LOGGER.error("There was an error during authorization", e);
+                        return Optional.empty();
+                    }
+                    unAuthenticate();
+                    return authenticate(++attempt);
+                }
+            }
         } catch (IOException | GeneralSecurityException e) {
             LOGGER.error("There was an error during authorization", e);
-            return Optional.empty();
         }
+        return Optional.empty();
     }
 
     @Override
@@ -124,7 +142,7 @@ public class DefaultAuthenticator implements Authenticator {
         return new AuthorizationCodeInstalledApp(flow, new CustomLocalServerReceiver()).authorize("user");
     }
 
-    private static Optional<Tokeninfo> verifyToken(String accessToken) throws IOException {
+    private Optional<Tokeninfo> verifyToken(String accessToken) throws IOException {
         Tokeninfo tokeninfo = oauth2.tokeninfo().setAccessToken(accessToken).execute();
         if (!tokeninfo.getAudience().equals(clientSecrets.getDetails().getClientId())) {
             System.err.println("ERROR: audience does not match our client ID!");

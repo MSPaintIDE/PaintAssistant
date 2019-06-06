@@ -10,4 +10,6 @@ public interface ActionListener {
 
     void listen(BiConsumer<List<Action>, Long> onRun);
 
+    void clearListeners();
+
 }
