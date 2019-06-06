@@ -22,4 +22,9 @@ public enum Action {
     public static Optional<Action> fromDatabase(String databaseName) {
         return Arrays.stream(values()).filter(action -> action.databaseName.equals(databaseName)).findFirst();
     }
+
+    @Override
+    public String toString() {
+        return this.databaseName;
+    }
 }

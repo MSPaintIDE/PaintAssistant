@@ -3,10 +3,7 @@ package com.uddernetworks.paintassist.actions;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
-import com.google.firebase.database.ChildEventListener;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.*;
 import com.uddernetworks.paintassist.PaintAssist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,19 +12,17 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 public class DefaultActionsListener implements ActionListener {
 
     private static Logger LOGGER = LoggerFactory.getLogger(DefaultActionsListener.class);
 
     private PaintAssist paintAssist;
-    private Map<Action, List<BiConsumer<Action, Long>>> listeners = new HashMap<>();
+    private List<BiConsumer<List<Action>, Long>> listeners = new ArrayList<>();
 
     public DefaultActionsListener(PaintAssist paintAssist) {
         this.paintAssist = paintAssist;
-
-        Arrays.stream(Action.values()).forEach(action -> this.listeners.put(action, new ArrayList<>()));
     }
 
     @Override
@@ -43,49 +38,92 @@ public class DefaultActionsListener implements ActionListener {
 
         var startingTime = System.currentTimeMillis();
 
-        database.getReference().child("/users/" + paintAssist.getAuthenticator().getTokenInfo().getUserId() + "/").addChildEventListener(new ChildEventListener() {
-            @Override
-            public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
-                processMutation(startingTime, snapshot);
+
+        paintAssist.getAuthenticator().getTokenInfo().ifPresent(tokenInfo -> {
+            var userRef = database.getReference().child("/users/" + tokenInfo.getUserId());
+
+            userRef.addChildEventListener(new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
+                    processMutation(startingTime, snapshot, userRef);
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
+                    processMutation(startingTime, snapshot, userRef);
+                }
+
+                @Override
+                public void onChildRemoved(DataSnapshot snapshot) {
+
+                }
+
+                @Override
+                public void onChildMoved(DataSnapshot snapshot, String previousChildName) {
+
+                }
+
+                @Override
+                public void onCancelled(DatabaseError error) {
+
+                }
+            });
+        });
+
+    }
+
+    @Override
+    public void listen(BiConsumer<List<Action>, Long> onRun) {
+        this.listeners.add(onRun);
+    }
+
+    private void processMutation(long startingTime, DataSnapshot snapshot, DatabaseReference userRef) {
+        if (!snapshot.getKey().equals("actions")) return;
+
+        var children = snapshot.getChildren().iterator();
+        var list = new ArrayList<DataSnapshot>();
+        children.forEachRemaining(list::add);
+
+        var userRoot = snapshot.getRef().getParent();
+
+        getValue(userRoot.child("timestamp"), value -> {
+            var timestamp = value.getValue(Long.class);
+
+            if (startingTime > timestamp) {
+                LOGGER.info("Starting time was after the change time, therefore cancelling.");
+                return;
             }
 
+            var actions = list.stream()
+                    .map(DataSnapshot::getValue)
+                    .map(String.class::cast)
+                    .map(name -> new AbstractMap.SimpleEntry<>(name, Action.fromDatabase(name)))
+                    .filter(entry -> {
+                        if (entry.getValue().isEmpty()) {
+                            LOGGER.error("Unknown value received from database: {}. If your client up to date?", entry.getKey());
+                            return false;
+                        }
+                        return true;
+                    })
+                    .map(Map.Entry::getValue)
+                    .map(Optional::get)
+                    .collect(Collectors.toList());
+
+            this.listeners.forEach(listener -> listener.accept(actions, timestamp));
+        }, error -> LOGGER.error("No timestamp found!"));
+    }
+
+    private void getValue(DatabaseReference ref, Consumer<DataSnapshot> onDataChanged, Consumer<DatabaseError> onCancelled) {
+        ref.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
-            public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
-                processMutation(startingTime, snapshot);
-            }
-
-            @Override
-            public void onChildRemoved(DataSnapshot snapshot) {
-
-            }
-
-            @Override
-            public void onChildMoved(DataSnapshot snapshot, String previousChildName) {
-
+            public void onDataChange(DataSnapshot snapshot) {
+                onDataChanged.accept(snapshot);
             }
 
             @Override
             public void onCancelled(DatabaseError error) {
-
+                onCancelled.accept(error);
             }
         });
-    }
-
-    @Override
-    public void listen(BiConsumer<Action, Long> onRun, Action... actions) {
-        Stream.of(actions).map(this.listeners::get).forEach(consumers -> consumers.add(onRun));
-    }
-
-    private void processMutation(long startingTime, DataSnapshot snapshot) {
-        var children = snapshot.getChildren().iterator();
-        if (!children.hasNext()) return;
-        long actionAt = children.next().getValue(Long.class);
-
-        if (startingTime > actionAt) return;
-
-        var databaseName = snapshot.getKey();
-        Action.fromDatabase(databaseName).ifPresentOrElse(
-                action -> this.listeners.get(action).forEach(consumer -> consumer.accept(action, actionAt)),
-                () -> LOGGER.error("Unknown value received from database: {}. If your client up to date?", databaseName));
     }
 }

@@ -12,17 +12,21 @@ import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.oauth2.Oauth2;
 import com.google.api.services.oauth2.model.Tokeninfo;
-import com.google.api.services.oauth2.model.Userinfoplus;
 import com.uddernetworks.paintassist.CustomLocalServerReceiver;
+import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 public class DefaultAuthenticator implements Authenticator {
+
+    private static Logger LOGGER = LoggerFactory.getLogger(DefaultAuthenticator.class);
 
     /**
      * Be sure to specify the name of your application. If the application name is {@code null} or
@@ -65,21 +69,23 @@ public class DefaultAuthenticator implements Authenticator {
 
     @Override
     public boolean isAuthenticated() {
-        return this.tokenInfo == null;
+        return this.tokenInfo != null;
     }
 
     @Override
     public void unAuthenticate() {
+        this.tokenInfo.clear();
+        this.tokenInfo = null;
 
+        try {
+            FileUtils.deleteDirectory(DATA_STORE_DIR);
+        } catch (IOException e) {
+            LOGGER.error("There was a problem removing the data store directory", e);
+        }
     }
 
     @Override
-    public void authenticate() {
-        authenticate(x -> {}, x -> {});
-    }
-
-    @Override
-    public void authenticate(Consumer<Tokeninfo> onSuccess, Consumer<Optional<Exception>> onError) {
+    public Optional<Tokeninfo> authenticate() {
         try {
             httpTransport = GoogleNetHttpTransport.newTrustedTransport();
             dataStoreFactory = new FileDataStoreFactory(DATA_STORE_DIR);
@@ -90,16 +96,23 @@ public class DefaultAuthenticator implements Authenticator {
                     APPLICATION_NAME).build();
             // run commands
             String accessToken = credential.getAccessToken();
-            verifyToken(accessToken).ifPresentOrElse(token -> onSuccess.accept(this.tokenInfo = token), () -> onError.accept(Optional.empty()));
-        } catch (Exception e) {
-            e.printStackTrace();
-            onError.accept(Optional.of(e));
+            var tokenOptional = verifyToken(accessToken);
+            tokenOptional.ifPresent(tokenInfo -> this.tokenInfo = tokenInfo);
+            return tokenOptional;
+        } catch (IOException | GeneralSecurityException e) {
+            LOGGER.error("There was an error during authorization", e);
+            return Optional.empty();
         }
     }
 
     @Override
-    public Tokeninfo getTokenInfo() {
-        return this.tokenInfo;
+    public Optional<Tokeninfo> getTokenInfo() {
+        return Optional.ofNullable(this.tokenInfo);
+    }
+
+    @Override
+    public Oauth2 getOAuth2() {
+        return oauth2;
     }
 
     private static Credential authorize() throws IOException {
@@ -119,10 +132,5 @@ public class DefaultAuthenticator implements Authenticator {
         }
 
         return Optional.of(tokeninfo);
-    }
-
-    private static void userInfo() throws IOException {
-        Userinfoplus userinfo = oauth2.userinfo().get().execute();
-        System.out.println(userinfo.toPrettyString());
     }
 }

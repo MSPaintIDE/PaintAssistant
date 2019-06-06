@@ -1,5 +1,6 @@
 package com.uddernetworks.paintassist.auth;
 
+import com.google.api.services.oauth2.Oauth2;
 import com.google.api.services.oauth2.model.Tokeninfo;
 
 import java.util.Optional;
@@ -11,9 +12,9 @@ public interface Authenticator {
 
     void unAuthenticate();
 
-    void authenticate();
+    Optional<Tokeninfo> authenticate();
 
-    void authenticate(Consumer<Tokeninfo> onSuccess, Consumer<Optional<Exception>> onError);
+    Optional<Tokeninfo> getTokenInfo();
 
-    Tokeninfo getTokenInfo();
+    Oauth2 getOAuth2();
 }
