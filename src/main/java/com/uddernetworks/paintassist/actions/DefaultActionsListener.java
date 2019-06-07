@@ -27,6 +27,8 @@ public class DefaultActionsListener implements ActionListener {
 
     @Override
     public void init() throws IOException {
+        if (!this.paintAssist.getAuthenticator().isAuthenticated()) throw new RuntimeException("Tried to init without authentication.");
+
         FirebaseOptions options = new FirebaseOptions.Builder()
                 .setCredentials(GoogleCredentials.getApplicationDefault())
                 .setDatabaseUrl("https://ms-paint-ide.firebaseio.com")
