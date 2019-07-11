@@ -4,3 +4,11 @@ PaintAssistant is a library to authenticate the user via their Google account, a
 
 This project is specific to [MS Paint IDE](https://github.com/MSPaintIDE/MSPaintIDE), though can serve as a great example if you're getting into this kind of thing.
 
+## Demo
+
+This program has a primitive example of using the library, the only thing required on your system is Java 11. Download the latest demo jar from [here](https://github.com/MSPaintIDE/PaintAssistant/releases/latest), and run it via commandline like so:
+
+![Doing java-jar demo.jar](https://rubbaboy.me/images/5sif1ra)
+
+The above screenshots show me saying "Hey google, can you run my code" and other actions on the same linked google account.
+
